@@ -176,6 +176,24 @@ if [[ "$(command -v make)" ]]; then
     fi
 fi
 
+# Git identity, needed by repo init / repo sync and for committing.
+# An existing identity is kept unless GIT_CONFIG_FORCE=1 is set.
+# Override with: GIT_NAME="Your Name" GIT_EMAIL="you@example.com" bash setup/android_build_env.sh
+GIT_NAME="${GIT_NAME:-provasish}"
+GIT_EMAIL="${GIT_EMAIL:-iambumba3@gmail.com}"
+echo "Setting up git config"
+if [[ -z "$(git config --global user.name)" || -n ${GIT_CONFIG_FORCE} ]]; then
+    git config --global user.name "${GIT_NAME}"
+fi
+if [[ -z "$(git config --global user.email)" || -n ${GIT_CONFIG_FORCE} ]]; then
+    git config --global user.email "${GIT_EMAIL}"
+fi
+# Stops repo init from prompting about colour output
+if [[ -z "$(git config --global color.ui)" ]]; then
+    git config --global color.ui auto
+fi
+echo "git identity: $(git config --global user.name) <$(git config --global user.email)>"
+
 echo "Installing repo"
 sudo curl --create-dirs -L -o /usr/local/bin/repo -O -L https://storage.googleapis.com/git-repo-downloads/repo
 sudo chmod a+rx /usr/local/bin/repo
