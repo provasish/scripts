@@ -12,6 +12,7 @@ UBUNTU_16_PACKAGES="libesd0-dev"
 UBUNTU_20_PACKAGES="libncurses5 curl python-is-python3"
 DEBIAN_10_PACKAGES="libncurses5"
 DEBIAN_11_PACKAGES="libncurses5"
+DEBIAN_12_PACKAGES="libncurses5 python-is-python3"
 PACKAGES=""
 
 # Packages shared by every supported release
@@ -20,7 +21,7 @@ COMMON_PACKAGES="adb autoconf automake axel bc bison build-essential \
     g++-multilib gawk gcc gcc-multilib git git-lfs gnupg gperf \
     htop imagemagick lib32z1-dev libc6-dev libcap-dev \
     libexpat1-dev libgmp-dev ^liblz4-.* ^liblzma.* libmpc-dev libmpfr-dev \
-    libssl-dev libtool libxml2 libxml2-utils ^lzma.* lzop \
+    libssl-dev libtool libxml2 libxml2-utils lz4 ^lzma.* lzop \
     maven ncftp patch patchelf pkg-config pngcrush \
     pngquant python3-pyelftools re2c schedtool squashfs-tools subversion \
     texinfo unzip w3m xsltproc zip zlib1g-dev lzip \
@@ -65,12 +66,14 @@ fi
 
 echo "Detected: ${DISTRO_NAME}"
 
-sudo apt install software-properties-common -y
-# Most of the packages below live in the universe component
-if [[ ${UBUNTU_MAJOR} -ge 16 ]]; then
-    sudo add-apt-repository -y universe
-fi
+# Refresh package lists first; a fresh install/container may have none yet
 sudo apt update
+sudo apt install software-properties-common -y
+# Most of the packages below live in Ubuntu's universe component
+if [[ ${UBUNTU_MAJOR} -ge 16 ]] && ! apt-cache policy | grep -q "/universe "; then
+    sudo add-apt-repository -y universe
+    sudo apt update
+fi
 
 MODERN=false
 if [[ ${UBUNTU_MAJOR} -ge 24 || ${DEBIAN_MAJOR} -ge 13 ]]; then
@@ -84,6 +87,8 @@ elif [[ ${DEBIAN_MAJOR} -eq 10 ]]; then
     PACKAGES="${LEGACY_PACKAGES} ${DEBIAN_10_PACKAGES}"
 elif [[ ${DEBIAN_MAJOR} -eq 11 ]]; then
     PACKAGES="${LEGACY_PACKAGES} ${DEBIAN_11_PACKAGES}"
+elif [[ ${DEBIAN_MAJOR} -eq 12 ]]; then
+    PACKAGES="${LEGACY_PACKAGES} ${DEBIAN_12_PACKAGES}"
 else
     PACKAGES="${LEGACY_PACKAGES}"
 fi
@@ -110,6 +115,13 @@ done
 set +f
 if [[ ${#MISSING_LIST[@]} -gt 0 ]]; then
     echo "Skipping packages not available on ${DISTRO_NAME}: ${MISSING_LIST[*]}"
+fi
+
+# gcc-multilib/g++-multilib conflict with Ubuntu's cross compilers (gcc-aarch64-linux-gnu, ...),
+# which apt will silently remove with -y, so list anything that is about to go
+TO_REMOVE="$(apt-get install -s "${INSTALL_LIST[@]}" 2>/dev/null | awk '/^Remv / {printf "%s ", $2}')"
+if [[ -n ${TO_REMOVE} ]]; then
+    echo "Warning: these packages conflict and will be removed: ${TO_REMOVE}"
 fi
 
 sudo DEBIAN_FRONTEND=noninteractive \
@@ -149,7 +161,10 @@ echo -e "Setting up udev rules for adb!"
 sudo curl --create-dirs -L -o /etc/udev/rules.d/51-android.rules -O -L https://raw.githubusercontent.com/M0Rf30/android-udev-rules/master/51-android.rules
 sudo chmod 644 /etc/udev/rules.d/51-android.rules
 sudo chown root /etc/udev/rules.d/51-android.rules
-sudo systemctl restart udev
+# No systemd (WSL without systemd, containers): rules are picked up on next boot instead
+if [[ -d /run/systemd/system ]]; then
+    sudo systemctl restart udev
+fi
 
 # Only build make from source when the distro's make is older than LATEST_MAKE_VERSION
 # (Ubuntu 24.04+ already ships make 4.3 or newer)
